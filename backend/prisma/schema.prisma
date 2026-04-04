@@ -1,0 +1,360 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  role         UserRole  @default(USER)
+  taxResidency String    @default("TH")
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime? // For Soft Delete
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  portfolios Portfolio[]
+  watchlists Watchlist[]
+  alerts     Alert[]
+  auditLogs  AuditLog[]
+}
+
+model Portfolio {
+  id           String         @id @default(uuid())
+  userId       String
+  name         String
+  strategy     StrategyType   @default(VALUE)
+  baseCurrency String         @default("THB")
+  isMargin     Boolean        @default(false)
+  tags         PortfolioTag[]
+  type         PortfolioType  @default(REAL) // REAL or PAPER (Test Mode)
+  deletedAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user          User                @relation(fields: [userId], references: [id])
+  cashAccounts  CashAccount[]
+  positions     Position[]
+  transactions  Transaction[]
+  taxLots       TaxLot[]
+  snapshots     PortfolioSnapshot[]
+  rebalanceLogs RebalanceLog[]
+
+  @@index([userId])
+}
+
+model PortfolioTag {
+  portfolioId String
+  tagId       String
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, tagId])
+}
+
+model CashAccount {
+  id          String   @id @default(uuid())
+  portfolioId String
+  currency    String // USD, THB, etc.
+  balance     Decimal  @default(0) @db.Decimal(24, 8)
+  isDomestic  Boolean  @default(false) // เพื่อแยกภาษีเงินนำเข้า
+  updatedAt   DateTime @updatedAt
+
+  portfolio     Portfolio     @relation(fields: [portfolioId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@unique([portfolioId, currency, isDomestic])
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  portfolioId String
+  type        TransactionType
+  status      TransactionStatus @default(COMPLETED)
+  executedAt  DateTime          @default(now())
+
+  // Summary Fields (Denormalized for Performance)
+  mainAssetId    String?
+  mainQuantity   Decimal? @db.Decimal(24, 8)
+  mainPrice      Decimal? @db.Decimal(24, 8)
+  baseCurrAmount Decimal? @db.Decimal(24, 8) // ยอดสุทธิในสกุลเงินหลักพอร์ต
+
+  exchangeRate Decimal? @db.Decimal(18, 6)
+  fee          Decimal  @default(0) @db.Decimal(18, 8)
+  taxWithheld  Decimal  @default(0) @db.Decimal(18, 8)
+
+  metadata       Json? // เก็บเหตุผลการเทรด / Note
+  parentTxId     String?
+  rebalanceLogId String?
+
+  portfolio     Portfolio     @relation(fields: [portfolioId], references: [id])
+  rebalanceLog  RebalanceLog? @relation(fields: [rebalanceLogId], references: [id])
+  ledgerEntries LedgerEntry[]
+  taxRecord     TaxRecord?
+  parentTx      Transaction?  @relation("TxHistory", fields: [parentTxId], references: [id])
+  childTxs      Transaction[] @relation("TxHistory")
+
+  @@index([portfolioId, executedAt(sort: Desc)])
+}
+
+model LedgerEntry {
+  id            String @id @default(uuid())
+  transactionId String
+  portfolioId   String
+
+  // Fixed Polymorphic: Explicit Foreign Keys for Data Integrity
+  cashAccountId String?
+  positionId    String?
+
+  accountType AccountType
+  side        EntrySide
+  amount      Decimal     @db.Decimal(24, 8)
+  assetSymbol String // "THB", "AAPL", "BTC"
+
+  transaction Transaction  @relation(fields: [transactionId], references: [id])
+  cashAccount CashAccount? @relation(fields: [cashAccountId], references: [id])
+  position    Position?    @relation(fields: [positionId], references: [id])
+
+  @@index([transactionId])
+  @@index([cashAccountId])
+  @@index([positionId])
+}
+
+model Asset {
+  id       String    @id @default(uuid())
+  symbol   String    @unique // Ticker เช่น PTT.BK, AAPL
+  name     String
+  type     AssetType
+  currency String
+
+  positions     Position[]
+  taxLots       TaxLot[]
+  fundamentals  AssetFundamental[]
+  watchlistItem WatchlistItem[]
+  dividends     DividendAnnouncement[]
+}
+
+model Position {
+  id           String   @id @default(uuid())
+  portfolioId  String
+  assetId      String
+  quantity     Decimal  @db.Decimal(24, 8)
+  avgPrice     Decimal  @db.Decimal(24, 8) // ต้นทุนเฉลี่ย
+  realizedPL   Decimal  @default(0) @db.Decimal(24, 8)
+  totalDiv     Decimal  @default(0) @db.Decimal(24, 8)
+  targetWeight Decimal? @db.Decimal(5, 2) // สำหรับ Rebalance Plan
+  updatedAt    DateTime @updatedAt
+
+  portfolio     Portfolio     @relation(fields: [portfolioId], references: [id])
+  asset         Asset         @relation(fields: [assetId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@unique([portfolioId, assetId])
+}
+
+model AssetFundamental {
+  id      String @id @default(uuid())
+  assetId String
+  quarter Int
+  year    Int
+
+  peRatio       Decimal? @db.Decimal(10, 2)
+  pbvRatio      Decimal? @db.Decimal(10, 2)
+  debtToEquity  Decimal? @db.Decimal(10, 2)
+  netProfit     Decimal? @db.Decimal(24, 8)
+  dividendYield Decimal? @db.Decimal(5, 2)
+
+  healthScore Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  asset       Asset    @relation(fields: [assetId], references: [id])
+
+  @@unique([assetId, quarter, year])
+}
+
+model TaxLot {
+  id            String   @id @default(uuid())
+  portfolioId   String
+  assetId       String
+  transactionId String
+  remainingQty  Decimal  @db.Decimal(24, 8) // จำนวนที่ยังไม่ได้ขายในไม้นี้
+  purchasePrice Decimal  @db.Decimal(24, 8)
+  earnedYear    Int // ปีที่ซื้อจริง (Check DTA)
+  executedAt    DateTime
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id])
+  asset     Asset     @relation(fields: [assetId], references: [id])
+}
+
+model TaxRecord {
+  id             String    @id @default(uuid())
+  transactionId  String    @unique
+  portfolioId    String
+  sourceCountry  String    @default("US")
+  taxType        TaxType
+  incomeAmount   Decimal   @db.Decimal(18, 2)
+  repatAmountTHB Decimal   @db.Decimal(18, 2) // ยอดแลกเป็นบาทจริงตอนนำเข้า
+  fxRate         Decimal   @db.Decimal(18, 6)
+  taxYear        Int // ปีที่ต้องยื่นภาษีในไทย
+  earnedYear     Int
+  status         TaxStatus @default(PENDING)
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+}
+
+model PortfolioSnapshot {
+  id          String   @id @default(uuid())
+  portfolioId String
+  date        DateTime
+
+  equity       Decimal @db.Decimal(24, 8) // NAV
+  cash         Decimal @db.Decimal(24, 8)
+  unrealizedPL Decimal @db.Decimal(24, 8)
+  costBasis    Decimal @db.Decimal(24, 8)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id])
+
+  @@unique([portfolioId, date])
+}
+
+model RebalanceLog {
+  id               String   @id @default(uuid())
+  portfolioId      String
+  executedAt       DateTime @default(now())
+  totalValueBefore Decimal  @db.Decimal(24, 8)
+  driftBefore      Json
+  description      String?
+
+  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id])
+  transactions Transaction[]
+}
+
+model Watchlist {
+  id     String          @id @default(uuid())
+  userId String
+  name   String
+  user   User            @relation(fields: [userId], references: [id])
+  items  WatchlistItem[]
+}
+
+model WatchlistItem {
+  id          String    @id @default(uuid())
+  watchlistId String
+  assetId     String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id])
+  asset       Asset     @relation(fields: [assetId], references: [id])
+
+  @@unique([watchlistId, assetId])
+}
+
+model DividendAnnouncement {
+  id      String    @id @default(uuid())
+  assetId String
+  exDate  DateTime
+  payDate DateTime?
+  amount  Decimal   @db.Decimal(18, 8)
+  asset   Asset     @relation(fields: [assetId], references: [id])
+}
+
+model Alert {
+  id          String  @id @default(uuid())
+  userId      String
+  assetId     String
+  condition   String // e.g. "PRICE_ABOVE", "PE_BELOW"
+  targetValue Decimal @db.Decimal(18, 8)
+  isActive    Boolean @default(true)
+  user        User    @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String // e.g. "UPDATE_PORTFOLIO", "DELETE_TX"
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Tag {
+  id   String @id @default(uuid())
+  name String @unique
+
+  portfolios PortfolioTag[]
+}
+
+enum StrategyType {
+  VALUE
+  GROWTH
+  DIVIDEND
+  TRADING
+}
+
+enum PortfolioType {
+  REAL
+  PAPER
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DEPOSIT
+  WITHDRAW
+  DIVIDEND
+  REPATRIATION
+  FEE
+  TAX
+  SPLIT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum AccountType {
+  CASH
+  ASSET
+}
+
+enum EntrySide {
+  DEBIT
+  CREDIT
+}
+
+enum AssetType {
+  STOCK
+  ETF
+  CRYPTO
+  FOREX
+  GOLD
+}
+
+enum TaxType {
+  PERSONAL_INCOME
+  CAPITAL_GAIN
+  WITHHOLDING
+}
+
+enum TaxStatus {
+  PENDING
+  FILED
+  PAID
+}

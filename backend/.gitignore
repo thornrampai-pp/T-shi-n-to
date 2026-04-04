@@ -1,0 +1,49 @@
+# dependencies
+
+node_modules
+
+# logs
+
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# environment variables
+
+.env
+.env.local
+.env.*.local
+
+# build output
+
+dist
+build
+.next
+out
+app
+
+# typescript
+
+*.tsbuildinfo
+
+# prisma
+
+prisma/migrations
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# IDE
+
+.vscode
+.idea
+
+# coverage
+
+coverage
+
+/src/generated/prisma
