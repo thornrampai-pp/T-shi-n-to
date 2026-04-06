@@ -41,3 +41,17 @@ export interface ResetPasswordRequest {
   token: string;       // Token จาก Email
   newPassword: string;
 }
+
+export interface UpdateUserRequest {
+  firstName?: string;
+  lastName?: string;
+  imageUrl?: string | null;
+  taxResidency?: string; // ถ้าแอปให้แก้ที่อยู่ทางภาษีได้เอง
+}
+
+export interface UpdateUserResponse {
+  firstName: string;
+  lastName: string;
+  imageUrl: string | null;
+  taxResidency: string;
+}
