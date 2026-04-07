@@ -1,3 +1,7 @@
+
+import { UserRole } from "@prisma/client";
+import { Request } from "express";
+
 export interface RegisterRequest {
   email: string;
   imageUrl?: string;
@@ -54,4 +58,19 @@ export interface UpdateUserResponse {
   lastName: string;
   imageUrl: string | null;
   taxResidency: string;
+}
+
+export interface AuthRequest extends Request {
+  user?: {
+    userId: string;
+    role: UserRole;
+    version: number;
+  };
+}
+
+ // กำหนด Interface ของ Payload ภายในไฟล์นี้เพื่อให้จัดการ Type ง่ายขึ้น
+export  interface TokenPayload {
+  userId: string;
+  role: UserRole;
+  version?: number;
 }

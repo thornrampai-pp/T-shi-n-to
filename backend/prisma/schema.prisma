@@ -90,8 +90,8 @@ model Transaction {
 
   // Summary Fields (Denormalized for Performance)
   mainAssetId    String?
-  mainQuantity   Decimal? @db.Decimal(24, 8)
-  mainPrice      Decimal? @db.Decimal(24, 8)
+  mainQuantity   Decimal? @db.Decimal(24, 8) //mainQuantity
+  mainPrice      Decimal? @db.Decimal(24, 8) // ราคาจริง ต่อหน่วยในสกุลเงินของสินทรัพย์หลัก
   baseCurrAmount Decimal? @db.Decimal(24, 8) // ยอดสุทธิในสกุลเงินหลักพอร์ต
 
   exchangeRate Decimal? @db.Decimal(18, 6)
@@ -139,6 +139,10 @@ model Asset {
   id       String    @id @default(uuid())
   symbol   String    @unique // Ticker เช่น PTT.BK, AAPL
   name     String
+
+  yahooSymbol       String?  // เช่น PTT.BK
+  twelveDataSymbol  String?  // เช่น PTT:SET (ถ้า Twelve Data รองรับ)
+  
   type     AssetType
   currency String
 

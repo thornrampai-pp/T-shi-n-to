@@ -5,4 +5,5 @@ export type EnvConfig = {
   ACCESS_TOKEN_SECRET: string,
   REFRESH_TOKEN_SECRET: string,
   RESET_PASSWORD_SECRET: string
+  TWELVE_DATA_API_KEY: string
 }

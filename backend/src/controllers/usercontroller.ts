@@ -38,7 +38,7 @@ export const UserController = {
 
   async changeMyPassword(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = req.user!.userId;
       const result = await userService.changePassword(userId, req.body);
       res.status(200).json(result);
     } catch (error: any) {
@@ -49,7 +49,8 @@ export const UserController = {
   async deleteMe(req: Request, res: Response) {
     try {
       //  ดึง ID จาก Token เท่านั้น (ปลอดภัย 100% เพราะ Token ปลอมไม่ได้)
-      const userId = (req as any).user.userId;
+      const userId = req.user!.userId;
+
 
       if (!userId) {
         return res.status(401).json({ message: 'Unauthorized' });
