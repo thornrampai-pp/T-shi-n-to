@@ -1,54 +1,56 @@
 import { Router } from 'express';
 import { PortfolioController } from '../controllers/portfoliocontroller';
-// import { authMiddleware } from '../middlewares/auth.middleware'; // สมมติว่าคุณมี middleware นี้
+import { PortfolioService } from '../services/portfolioservices';
+import { AssetPriceService } from '../services/assetservices';
+// import { authMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router();
-const portfolioController = new PortfolioController();
 
-// ทุก Route ในนี้ควรผ่านการตรวจสอบสิทธิ์ (Authentication)
+/**
+ * 🛠️ การประกอบร่าง (Manual Dependency Injection)
+ * เราต้องสร้างก้อน Service ขึ้นมาก่อน แล้วค่อย "ฉีด" เข้าไปใน Controller
+ */
+const portfolioService = new PortfolioService();
+const assetService = new AssetPriceService();
+
+// ส่ง service ทั้งสองตัวเข้าไปใน constructor ตามที่เขียนไว้ใน Class
+const portfolioController = new PortfolioController(portfolioService, assetService);
+
 // router.use(authMiddleware); 
 
 /**
  * @route   GET /api/portfolios
- * @desc    ดึงรายการพอร์ตทั้งหมดของผู้ใช้
  */
-router.get('/', portfolioController.getAll);
+router.get('/',(req,res)=> portfolioController.getAll);
 
 /**
  * @route   POST /api/portfolios
- * @desc    สร้างพอร์ตการลงทุนใหม่
  */
-router.post('/', portfolioController.create);
+router.post('/',(req,res)=> portfolioController.create);
 
 /**
  * @route   GET /api/portfolios/:id
- * @desc    ดึงข้อมูลพอร์ตแบบละเอียด (พร้อมราคาสดและกำไร)
  */
-router.get('/:id', portfolioController.getDetails);
+router.get('/:id', (req, res) => portfolioController.getDetails);
 
 /**
  * @route   PATCH /api/portfolios/:id
- * @desc    แก้ไขข้อมูลพอร์ต (เช่น เปลี่ยนชื่อ)
  */
-router.patch('/:id', portfolioController.update);
+router.patch('/:id', (req, res) => portfolioController.update);
 
 /**
  * @route   DELETE /api/portfolios/:id
- * @desc    ลบพอร์ต (Soft Delete)
  */
-router.delete('/:id', portfolioController.delete);
+router.delete('/:id', (req, res) => portfolioController.delete);
 
 /**
  * @route   POST /api/portfolios/:id/dividend
- * @desc    บันทึกเงินปันผลเข้าพอร์ต
  */
-router.post('/:id/dividend', portfolioController.recordDividend);
+router.post('/:id/dividend', (req, res) => portfolioController.recordDividend);
 
 /**
  * @route   POST /api/portfolios/:id/snapshot
- * @desc    บันทึกมูลค่าพอร์ตประจำวัน (NAV Snapshot)
  */
-
-router.post('/:id/snapshot', portfolioController.takeSnapshot);
+router.post('/:id/snapshot', (req, res) => portfolioController.takeSnapshot);
 
 export default router;
