@@ -1,0 +1,68 @@
+import { StrategyType, PortfolioType } from '@prisma/client';
+
+export interface CreatePortfolioDTO {
+  name: string;
+  baseCurrency: string;
+  strategy?: StrategyType;
+  type?: PortfolioType;
+}
+
+export interface UpdatePortfolioDTO {
+  name?: string;
+  strategy?: StrategyType;
+}
+
+export interface RecordDividendDTO {
+  symbol: string;
+  amount: number;
+  taxWithheld?: number;
+  executedAt?: Date;
+}
+
+export interface CreateSnapshotDTO {
+  equity: number;
+  cash: number;
+  costBasis: number;
+}
+/**
+ * รายละเอียดหุ้นแต่ละตัวในพอร์ต (Holdings)
+ */
+export interface HoldingItem {
+  symbol: string;
+  name: string;
+  quantity: number;
+  avgPrice: number;
+  currentPrice: number;
+  currency: string;
+  marketValueLocal: number;  // มูลค่าตามสกุลเงินสินทรัพย์
+  marketValueBase: number;   // มูลค่าตามสกุลเงินพอร์ต (เช่น แปลงเป็น THB แล้ว)
+  unrealizedPL: number;
+  unrealizedPLPercentage: number;
+  totalDividend: number;
+  totalReturnLocal: number;
+  weight: number;            // สัดส่วน % ในพอร์ต (เช่น 15.5)
+}
+
+/**
+ * สรุปภาพรวมของพอร์ต (Summary)
+ */
+export interface PortfolioSummary {
+  nav: number;               // มูลค่าสินทรัพย์รวม + เงินสด
+  totalMarketValue: number;
+  totalCash: number;
+  totalCostBasis: number;
+  totalUnrealizedPL: number;
+  allTimeReturnPercentage: number;
+  cashWeight: number;        // สัดส่วนเงินสด %
+}
+
+/**
+ * โครงสร้างหลักที่ API จะส่งออก
+ */
+export interface PortfolioDetailResponse {
+  id: string;
+  name: string;
+  baseCurrency: string;
+  summary: PortfolioSummary;
+  holdings: HoldingItem[];
+}

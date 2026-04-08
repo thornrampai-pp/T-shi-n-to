@@ -3,6 +3,7 @@ import { ENV } from "./config/env";
 import authroutes from "./routes/authroutes";
 import userroutes from "./routes/userroutes";
 import assetroutes from "./routes/assetsroutes";
+import portfoliorouter from "./routes/portfolioroutes";
 import cors from "cors";
 
 
@@ -19,6 +20,8 @@ app.get("/", (req, res) => {
 app.use("/auth", authroutes);
 app.use("/user", userroutes);
 app.use('/assets', assetroutes);
+app.use('/portfolios', portfoliorouter);
+
 
 app.listen(ENV.PORT, () => {
   console.log(`Server is running on port ${ENV.PORT}`);
