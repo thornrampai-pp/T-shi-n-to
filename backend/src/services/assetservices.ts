@@ -44,6 +44,25 @@ export class AssetPriceService {
     }
   }
 
+  async getPrices(symbols: string[]): Promise<Record<string, number>> {
+    const result: Record<string, number> = {};
+
+    // ยิง parallel (เร็วกว่า loop ธรรมดา)
+    await Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const price = await this.getPrice(symbol); // reuse ของเดิม
+          result[symbol] = price;
+        } catch (err) {
+          console.error(`❌ Failed to fetch price for ${symbol}`);
+          result[symbol] = 0; // fallback
+        }
+      })
+    );
+
+    return result;
+  }
+
   private async fetchPrice(symbol: string): Promise<number> {
     let price: number | null = null;
     if (symbol.endsWith('.BK')) {

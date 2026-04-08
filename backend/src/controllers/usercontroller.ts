@@ -1,6 +1,6 @@
 import { ChangePasswordRequest, UpdateUserRequest, UpdateUserResponse, UserProfileDto } from "../interface/auth/auth.types";
 import prisma from "../lib/prisma";
-import { UserService } from "../serviece/userservice";
+import { UserService } from "../services/userservices";
 import { Request, Response } from "express";
 
 const userService = new UserService();

@@ -1,4 +1,4 @@
-import { AuthService } from "../serviece/authservice";
+import { AuthService } from "../services/authservices";
 import { Request, Response } from "express";
 
 

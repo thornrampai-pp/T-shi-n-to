@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AssetPriceService } from '../serviece/assetservice';
+import { AssetPriceService } from '../services/assetservices';
 
 export class AssetController {
   private assetService = new AssetPriceService();

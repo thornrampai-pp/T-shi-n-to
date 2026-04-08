@@ -341,6 +341,7 @@ enum TransactionStatus {
 enum AccountType {
   CASH
   ASSET
+  INCOME
 }
 
 enum EntrySide {

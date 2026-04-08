@@ -1,4 +1,4 @@
-import { StrategyType, PortfolioType } from '@prisma/client';
+import { StrategyType, PortfolioType, Prisma } from '@prisma/client';
 
 export interface CreatePortfolioDTO {
   name: string;
@@ -41,6 +41,11 @@ export interface HoldingItem {
   totalDividend: number;
   totalReturnLocal: number;
   weight: number;            // สัดส่วน % ในพอร์ต (เช่น 15.5)
+  unrealizedPLBase: number;    // เพิ่ม: กำไร/ขาดทุนหน่วย THB (รวม FX Impact)
+  realizedPLBase: number;      // เพิ่ม: กำไรที่ขายไปแล้วหน่วย THB
+  totalDividendBase: number;   // เพิ่ม: ปันผลรวมหน่วย THB
+  realizedPL: number;          // เพิ่ม: เพื่อให้คำนวณ Total Return ได้ครบถ้วน
+  totalReturnBase: number;     // เพิ่ม: (Unrealized + Realized + Dividend) ในหน่วยพอร์ต
 }
 
 /**
@@ -52,6 +57,8 @@ export interface PortfolioSummary {
   totalCash: number;
   totalCostBasis: number;
   totalUnrealizedPL: number;
+  totalRealizedPL: number;      // เพิ่ม: กำไรที่รับรู้แล้วรวมทั้งพอร์ต
+  totalDividend: number;        // เพิ่ม: ปันผลรวมทั้งพอร์ต
   allTimeReturnPercentage: number;
   cashWeight: number;        // สัดส่วนเงินสด %
 }
@@ -66,3 +73,11 @@ export interface PortfolioDetailResponse {
   summary: PortfolioSummary;
   holdings: HoldingItem[];
 }
+
+export // สร้าง Type สำหรับ Portfolio ที่รวมเอาข้อมูลที่เกี่ยวข้องมาด้วย
+  type PortfolioWithDetails = Prisma.PortfolioGetPayload<{
+    include: {
+      cashAccounts: true,
+      positions: { include: { asset: true } }
+    }
+  }>;

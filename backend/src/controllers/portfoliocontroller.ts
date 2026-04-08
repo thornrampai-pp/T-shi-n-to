@@ -1,7 +1,7 @@
 // controllers/portfolio.controller.ts
 import { Request, Response } from 'express';
-import { PortfolioService } from '../serviece/portfolioservice';
-import { AssetPriceService } from '../serviece/assetservice';
+import { PortfolioService } from '../services/portfolioservices';
+import { AssetPriceService } from '../services/assetservices';
 
 export class PortfolioController {
   private portfolioService = new PortfolioService();
@@ -10,6 +10,7 @@ export class PortfolioController {
    * POST /portfolios
    * สร้างพอร์ตใหม่
    */
+  
   create = async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user.id; // ดึงจาก Auth Middleware
@@ -30,7 +31,12 @@ export class PortfolioController {
    */
   getAll = async (req: Request, res: Response) => {
     try {
-      const userId = (req as any).user.id;
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({ success: false, message: "Portfolio ID is required" });
+      }
+
       const portfolios = await this.portfolioService.getAllPortfolios(userId);
 
       return res.json({
@@ -46,10 +52,11 @@ export class PortfolioController {
    * GET /portfolios/:id
    * ดึงรายละเอียดพอร์ตแบบเจาะลึก พร้อมคำนวณกำไร/ขาดทุน และสัดส่วนหุ้น
    */
+
+  
   getDetails = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      
       if (!id || typeof id !== 'string') {
         return res.status(400).json({
           success: false,
@@ -59,43 +66,28 @@ export class PortfolioController {
 
       const userId = req.user?.userId;
       if (!userId) {
-        return res.status(401).json({ message: 'Unauthorized' });
+        return res.status(401).json({ success: false, message: "Portfolio ID is required" });
       }
-      // 1. ดึงข้อมูลพอร์ตเบื้องต้นเพื่อดูว่า User นี้ถือหุ้นตัวไหนบ้าง
+      // 1. ดึงข้อมูลพอร์ตครั้งเดียว พร้อมข้อมูลที่เกี่ยวข้องทั้งหมด
       const portfolioRaw = await this.portfolioService.getPortfolioById(userId, id);
+
       if (!portfolioRaw) {
         return res.status(404).json({ success: false, message: "ไม่พบพอร์ตที่ระบุ" });
       }
 
-      // 2. รวบรวม Symbol ทั้งหมดในพอร์ต (เช่น ["AAPL", "CPALL.BK"])
+      // 2. รวบรวม Symbol และดึงราคา (ยิง API ครั้งเดียว)
       const symbols = portfolioRaw.positions.map(p => p.asset.symbol);
+      const currentPrices = await this.assetService.getPrices(symbols);
 
-      // 3. ดึงราคาปัจจุบันจาก AssetService
-      // เราจะสร้าง Object เก็บราคา { "AAPL": 175.5, ... }
-      const currentPrices: Record<string, number> = {};
-
-      await Promise.all(
-        symbols.map(async (s) => {
-          try {
-            const price = await this.assetService.getPrice(s);
-            currentPrices[s] = price;
-          } catch (err) {
-            currentPrices[s] = 0; // กรณีดึงราคาไม่ได้ให้เป็น 0
-          }
-        })
-      );
-
-      // 4. จัดการ FX Rates (ดึงเรทแลกเปลี่ยน)
-      // ในอนาคตคุณอาจจะสร้าง CurrencyService มาดึงเรทจริง เช่น "USDTHB=X" จาก Yahoo
+      // 3. FX Rates (Mock data: ในอนาคตดึงจาก Service)
       const fxRates: Record<string, number> = {
-        "THB": 1,
-        "USD": 36.5, // สมมติค่าคงที่ไว้ก่อน หรือดึงจาก Service
+        THB: 1,
+        USD: 36.5,
       };
 
-      // 5. ส่งข้อมูลที่ได้จาก DB + ราคาสด ไปให้ PortfolioService คำนวณสรุป
-      const result = await this.portfolioService.getPortfolioDetails(
-        userId,
-        id,
+      // 4. คำนวณรายละเอียดทางการเงินโดยส่งข้อมูลที่มีอยู่เข้าไป
+      const result = this.portfolioService.calculatePortfolioDetails(
+        portfolioRaw,
         currentPrices,
         fxRates
       );
@@ -216,15 +208,32 @@ export class PortfolioController {
           message: "Portfolio ID is required and must be a string"
         });
       }
-      // ในอนาคต Logic การรวบรวมตัวเลข NAV ควรทำใน Service ก่อนส่งมาที่นี่
-      const snapshot = await this.portfolioService.createSnapshot(id, req.body);
+      
+      const userId = req.user?.userId;
 
-      return res.status(201).json({
-        success: true,
-        data: snapshot
-      });
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const portfolioRaw = await this.portfolioService.getPortfolioById(userId, id);
+      if (!portfolioRaw) {
+        return res.status(404).json({ message: 'Portfolio not found' });
+      }
+
+      const symbols = portfolioRaw.positions.map(p => p.asset.symbol);
+      const currentPrices = await this.assetService.getPrices(symbols);
+      const fxRates = { THB: 1, USD: 36.5 };
+
+      // ส่ง Data Object เข้าไปบันทึก snapshot
+      const snapshot = await this.portfolioService.createSnapshot(
+        portfolioRaw,
+        currentPrices,
+        fxRates
+      );
+
+      return res.status(201).json({ success: true, data: snapshot });
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: 'ไม่สามารถบันทึก Snapshot ได้' });
+      return res.status(500).json({ success: false, message: error.message });
     }
   };
 }

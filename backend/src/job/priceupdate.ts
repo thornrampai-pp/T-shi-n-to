@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { AssetPriceService } from '../serviece/assetservice';
+import { AssetPriceService } from '../services/assetservices';
 import prisma from '../lib/prisma';
 
 const assetService = new AssetPriceService();

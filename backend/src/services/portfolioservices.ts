@@ -12,7 +12,8 @@ import {
   UpdatePortfolioDTO,
   RecordDividendDTO,
   CreateSnapshotDTO,
-  PortfolioDetailResponse
+  PortfolioDetailResponse,
+  PortfolioWithDetails
 } from '../interface/portfolio/portfolio.types';
 
 export class PortfolioService {
@@ -96,77 +97,83 @@ export class PortfolioService {
    * [ฟังก์ชันหลัก] คำนวณสรุปภาพรวมพอร์ตแบบ Real-time
    * คำนวณกำไร/ขาดทุน, สัดส่วนการลงทุน (Weight) และแปลงสกุลเงิน (FX)
    */
-  async getPortfolioDetails(
-    userId: string,
-    portfolioId: string,
-    currentPrices: Record<string, number>, // ราคาหุ้นปัจจุบัน { "AAPL": 170 }
-    fxRates: Record<string, number>        // อัตราแลกเปลี่ยน { "USD": 36.5 }
-  ): Promise<PortfolioDetailResponse | null> {
+  // services/portfolio.service.ts
 
-    const portfolio = await this.getPortfolioById(userId, portfolioId);
-    if (!portfolio) return null;
+  calculatePortfolioDetails(
+    portfolio: PortfolioWithDetails,
+    currentPrices: Record<string, number>,
+    fxRates: Record<string, number>
+  ): PortfolioDetailResponse {
 
-    let totalMarketValueBase = 0; // มูลค่าตลาดรวมในสกุลเงินหลักของพอร์ต
-    let totalCostBasisBase = 0;   // ต้นทุนรวมในสกุลเงินหลักของพอร์ต
+    let totalMarketValueBase = 0;
+    let totalCostBasisBase = 0;
+    let totalRealizedPLBase = 0; // เพิ่มตัวแปรสะสม
+    let totalDividendBase = 0;   // เพิ่มตัวแปรสะสม
 
-    // --- ส่วนที่ 1: คำนวณข้อมูลรายตำแหน่งหุ้น (Holdings) ---
     const holdings = portfolio.positions.map(pos => {
       const symbol = pos.asset.symbol;
-      const assetCurrency = pos.asset.currency;
       const currentPrice = currentPrices[symbol] || 0;
-      const fxRate = fxRates[assetCurrency] || 1; // เรทแปลงสกุลเงินหุ้น -> สกุลเงินพอร์ต
+      const fxRate = fxRates[pos.asset.currency];
+      if (!fxRate) {
+        throw new Error(`Missing FX rate for ${pos.asset.currency}`);
+      }
 
       const quantity = Number(pos.quantity);
       const avgPrice = Number(pos.avgPrice);
+      const realizedPL = Number(pos.realizedPL || 0);
+      const totalDiv = Number(pos.totalDiv || 0);
 
-      // คำนวณมูลค่าตามสกุลเงินท้องถิ่น (Local Currency)
       const marketValueLocal = quantity * currentPrice;
       const costBasisLocal = quantity * avgPrice;
 
-      // แปลงมูลค่ากลับมาเป็นสกุลเงินหลักของพอร์ต (Base Currency)
+      // แปลงค่าต่างๆ เป็น Base Currency
       const marketValueBase = marketValueLocal * fxRate;
       const costBasisBase = costBasisLocal * fxRate;
+      const unrealizedPLBase = (marketValueLocal - costBasisLocal) * fxRate;
+      const realizedPLBase = realizedPL * fxRate;
+      const totalDivBase = totalDiv * fxRate;
 
+      // สะสมยอดรวมพอร์ต (Base Currency)
       totalMarketValueBase += marketValueBase;
       totalCostBasisBase += costBasisBase;
+      totalRealizedPLBase += realizedPLBase;
+      totalDividendBase += totalDivBase;
 
-      // คำนวณกำไร/ขาดทุนที่ยังไม่เกิดขึ้น (Unrealized P/L)
       const unrealizedPL = marketValueLocal - costBasisLocal;
-      const unrealizedPLPercentage = costBasisLocal > 0 ? (unrealizedPL / costBasisLocal) * 100 : 0;
 
+      // ส่งค่ากลับให้ตรงกับ HoldingItem interface
       return {
         symbol,
         name: pos.asset.name,
         quantity,
         avgPrice,
         currentPrice,
-        currency: assetCurrency,
+        currency: pos.asset.currency,
         marketValueLocal,
         marketValueBase,
         unrealizedPL,
-        unrealizedPLPercentage,
-        totalDividend: Number(pos.totalDiv),
-        // กำไรรวม = กำไรราคาหุ้น + ปันผลสะสม + กำไรที่ขายไปแล้วจริง
-        totalReturnLocal: unrealizedPL + Number(pos.totalDiv) + Number(pos.realizedPL),
-        weight: 0 // จะคำนวณสัดส่วน % ในขั้นตอนถัดไป
+        unrealizedPLPercentage: costBasisLocal > 0 ? (unrealizedPL / costBasisLocal) * 100 : 0,
+        totalDividend: totalDiv,
+        totalReturnLocal: unrealizedPL + totalDiv + realizedPL,
+
+        // ฟิลด์ที่เพิ่มเข้ามาใหม่ตาม Interface
+        unrealizedPLBase,
+        realizedPLBase,
+        totalDividendBase: totalDivBase,
+        realizedPL,
+        totalReturnBase: unrealizedPLBase + realizedPLBase + totalDivBase,
+        weight: 0 // คำนวณทีหลัง
       };
     });
 
-    // --- ส่วนที่ 2: คำนวณยอดเงินสดรวม (Cash) แปลงเป็น Base Currency ---
     const totalCashBase = portfolio.cashAccounts.reduce((sum, acc) => {
       const rate = fxRates[acc.currency] || 1;
       return sum + (Number(acc.balance) * rate);
     }, 0);
 
-    // NAV = มูลค่าหุ้นทั้งหมด + เงินสดคงเหลือ
     const nav = totalMarketValueBase + totalCashBase;
 
-    // --- ส่วนที่ 3: คำนวณสัดส่วนการลงทุน (%) และสรุปข้อมูลส่งกลับ ---
-    const finalHoldings = holdings.map(h => ({
-      ...h,
-      weight: nav > 0 ? (h.marketValueBase / nav) * 100 : 0
-    }));
-
+    // --- ส่วน Return ที่แก้ Error ts(2739) ---
     return {
       id: portfolio.id,
       name: portfolio.name,
@@ -177,10 +184,20 @@ export class PortfolioService {
         totalCash: totalCashBase,
         totalCostBasis: totalCostBasisBase,
         totalUnrealizedPL: totalMarketValueBase - totalCostBasisBase,
-        allTimeReturnPercentage: totalCostBasisBase > 0 ? ((totalMarketValueBase - totalCostBasisBase) / totalCostBasisBase) * 100 : 0,
+
+        // ✅ เพิ่มฟิลด์ที่ขาดไปตาม Error
+        totalRealizedPL: totalRealizedPLBase,
+        totalDividend: totalDividendBase,
+
+        allTimeReturnPercentage: totalCostBasisBase > 0
+          ? ((totalMarketValueBase + totalRealizedPLBase + totalDividendBase - totalCostBasisBase) / totalCostBasisBase) * 100
+          : 0,
         cashWeight: nav > 0 ? (totalCashBase / nav) * 100 : 0
       },
-      holdings: finalHoldings
+      holdings: holdings.map(h => ({
+        ...h,
+        weight: nav > 0 ? (h.marketValueBase / nav) * 100 : 0
+      }))
     };
   }
 
@@ -225,17 +242,44 @@ export class PortfolioService {
         }
       });
 
+      // ✅ Step 4.1: CREDIT (รายได้)
+      await tx.ledgerEntry.create({
+        data: {
+          transactionId: transaction.id,
+          portfolioId,
+          accountType: AccountType.INCOME,
+          side: EntrySide.CREDIT,
+          amount: new Prisma.Decimal(data.amount),
+          assetSymbol: asset.symbol
+        }
+      });
+
       // 5. อัปเดตยอดเงินสดในบัญชีจริง
       await tx.cashAccount.update({
         where: { id: cashAccount.id },
-        data: { balance: { increment: data.amount } }
+        data: { balance: { increment: new Prisma.Decimal(data.amount) } }
       });
 
       // 6. บันทึกยอดปันผลสะสมรายตัวหุ้น (เพื่อให้คำนวณ Yield รายตัวได้)
-      await tx.position.updateMany({
-        where: { portfolioId, assetId: asset.id },
-        data: { totalDiv: { increment: data.amount } }
+      const position = await tx.position.findUnique({
+        where: {
+          portfolioId_assetId: {
+            portfolioId,
+            assetId: asset.id
+          }
+        }
       });
+
+      if (position) {
+        await tx.position.update({
+          where: { id: position.id },
+          data: {
+            totalDiv: {
+              increment: new Prisma.Decimal(data.amount)
+            }
+          }
+        });
+      }
 
       return transaction;
     });
@@ -244,27 +288,47 @@ export class PortfolioService {
   /**
    * บันทึก Snapshot มูลค่าพอร์ตรายวัน (ใช้สำหรับวาดกราฟ History)
    */
-  async createSnapshot(portfolioId: string, data: CreateSnapshotDTO) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // ตั้งเวลาเป็นเที่ยงคืนเพื่อจัดกลุ่มรายวัน
+  // services/portfolio.service.ts
 
+  async createSnapshot(
+    portfolio: PortfolioWithDetails, // แก้จาก portfolioId: string เป็น Object Type
+    currentPrices: Record<string, number>,
+    fxRates: Record<string, number>
+  ) {
+    // 1. ใช้ Logic กลางที่เราเพิ่งแก้ (calculatePortfolioDetails) มาช่วยคำนวณตัวเลข
+    // วิธีนี้ทำให้เราไม่ต้องวนลูป (for/reduce) ซ้ำซ้อนในฟังก์ชันนี้อีก
+    const details = this.calculatePortfolioDetails(portfolio, currentPrices, fxRates);
+
+    const today = new Date(
+      Date.UTC(
+        new Date().getUTCFullYear(),
+        new Date().getUTCMonth(),
+        new Date().getUTCDate()
+      )
+    );
+
+    // 2. บันทึกลง Database (Snapshot)
+    // หมายเหตุ: ไม่ต้องใช้ $transaction หรือดึงข้อมูลใหม่แล้ว เพราะเรามีข้อมูลครบใน details
     return await prisma.portfolioSnapshot.upsert({
       where: {
-        portfolioId_date: { portfolioId, date: today }
+        portfolioId_date: {
+          portfolioId: portfolio.id,
+          date: today
+        }
       },
       update: {
-        equity: new Prisma.Decimal(data.equity),
-        cash: new Prisma.Decimal(data.cash),
-        unrealizedPL: new Prisma.Decimal(data.equity - data.costBasis),
-        costBasis: new Prisma.Decimal(data.costBasis)
+        equity: new Prisma.Decimal(details.summary.nav),
+        cash: new Prisma.Decimal(details.summary.totalCash),
+        unrealizedPL: new Prisma.Decimal(details.summary.totalUnrealizedPL),
+        costBasis: new Prisma.Decimal(details.summary.totalCostBasis)
       },
       create: {
-        portfolioId,
+        portfolioId: portfolio.id,
         date: today,
-        equity: new Prisma.Decimal(data.equity),
-        cash: new Prisma.Decimal(data.cash),
-        unrealizedPL: new Prisma.Decimal(data.equity - data.costBasis),
-        costBasis: new Prisma.Decimal(data.costBasis)
+        equity: new Prisma.Decimal(details.summary.nav),
+        cash: new Prisma.Decimal(details.summary.totalCash),
+        unrealizedPL: new Prisma.Decimal(details.summary.totalUnrealizedPL),
+        costBasis: new Prisma.Decimal(details.summary.totalCostBasis)
       }
     });
   }
