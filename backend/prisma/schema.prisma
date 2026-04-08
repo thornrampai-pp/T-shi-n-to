@@ -18,7 +18,7 @@ model User {
   tokenVersion Int       @default(0)
   firstName    String?
   lastName     String?
-  imageUrl     String?   
+  imageUrl     String?
   role         UserRole  @default(USER)
   taxResidency String    @default("TH")
   isActive     Boolean   @default(true)
@@ -90,6 +90,7 @@ model Transaction {
 
   // Summary Fields (Denormalized for Performance)
   mainAssetId    String?
+  mainAsset      Asset?   @relation(fields: [mainAssetId], references: [id])
   mainQuantity   Decimal? @db.Decimal(24, 8) //mainQuantity
   mainPrice      Decimal? @db.Decimal(24, 8) // ราคาจริง ต่อหน่วยในสกุลเงินของสินทรัพย์หลัก
   baseCurrAmount Decimal? @db.Decimal(24, 8) // ยอดสุทธิในสกุลเงินหลักพอร์ต
@@ -136,16 +137,17 @@ model LedgerEntry {
 }
 
 model Asset {
-  id       String    @id @default(uuid())
-  symbol   String    @unique // Ticker เช่น PTT.BK, AAPL
-  name     String
+  id     String @id @default(uuid())
+  symbol String @unique // Ticker เช่น PTT.BK, AAPL
+  name   String
 
-  yahooSymbol       String?  // เช่น PTT.BK
-  twelveDataSymbol  String?  // เช่น PTT:SET (ถ้า Twelve Data รองรับ)
-  
+  yahooSymbol      String? // เช่น PTT.BK
+  twelveDataSymbol String? // เช่น PTT:SET (ถ้า Twelve Data รองรับ)
+
   type     AssetType
   currency String
 
+  transactions  Transaction[]          
   positions     Position[]
   taxLots       TaxLot[]
   fundamentals  AssetFundamental[]
